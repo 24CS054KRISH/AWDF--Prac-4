@@ -32,6 +32,17 @@ app.use("/auth", authRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/tasks", taskRoutes);
 
+const taskCache = require("./cache/taskCache");
+
+// Direct /cache/stats endpoint alias
+app.get("/cache/stats", auth, (req, res) => {
+    const stats = taskCache.getCacheStats();
+    res.status(200).json({
+        message: "Cache statistics retrieved successfully",
+        stats
+    });
+});
+
 // Direct /me endpoint alias
 app.get("/me", auth, async (req, res, next) => {
     try {

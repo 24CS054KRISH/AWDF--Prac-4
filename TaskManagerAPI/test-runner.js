@@ -44,16 +44,14 @@ async function runSuite() {
     // Wait for Mongoose to connect if not ready
     if (mongoose.connection.readyState !== 1) {
         console.log("[TEST SERVER] Waiting for MongoDB connection...");
-        await new Promise((resolve, reject) => {
-            mongoose.connection.once("connected", resolve);
-            mongoose.connection.once("error", reject);
-            setTimeout(() => {
-                if (mongoose.connection.readyState === 1) resolve();
-                else reject(new Error("MongoDB connection timeout"));
-            }, 10000);
-        });
-        console.log("[TEST SERVER] MongoDB connected!");
+        try {
+            await mongoose.connection.asPromise();
+            console.log("[TEST SERVER] MongoDB connected!");
+        } catch {
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+        }
     }
+
 
     console.log("\n==================================================");
     console.log("   PRACTICAL 7 COMPREHENSIVE AUTOMATED TEST SUITE   ");

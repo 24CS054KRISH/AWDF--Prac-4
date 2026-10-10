@@ -32,81 +32,74 @@
 
 ---
 
-## 🚀 PRACTICAL 8 STARTS FROM HERE: Performance Optimization and Lazy Loading in React
+## 📌 Practical 8: Performance Optimization and Lazy Loading in React
+- Frontend Code Splitting with `React.lazy()` and `<Suspense>`.
+- Skeleton fallback loading UI with shimmer animation.
+- On-demand heavy component chunking (`TaskAnalyticsChart.jsx`).
+- Component memoization with `React.memo` preventing unnecessary re-renders.
 
-Practical 8 focuses on frontend performance engineering using **React.lazy()**, **Suspense with skeleton fallbacks**, **Route-level Code Splitting**, **On-Demand Component Loading**, and **React DevTools Profiler Optimization**.
+---
 
-### 🌟 Practical 8 Architecture
+## 🚀 PRACTICAL 9 STARTS FROM HERE: In-Memory Caching and Query Optimization
+
+Practical 9 implements server-side **In-Memory Caching** using `node-cache` to eliminate redundant database roundtrips, reduce network latency, and optimize API throughput while ensuring strict **cache invalidation** and **multi-user isolation**.
+
+### 🌟 Practical 9 Architecture
 ```
-React Client (Vite)
-├── Initial Core Bundle (index-*.js) -> Fast Initial Paint
-└── Dynamic On-Demand Chunks:
-    ├── AuthView Chunk (Loaded on unauthenticated state)
-    ├── TaskManagerView Chunk (Loaded on Tasks tab)
-    ├── AnalyticsView Chunk (Loaded on Analytics tab)
-    │   └── TaskAnalyticsChart Chunk (Heavy chart deferred until user requests it)
-    └── ProfileView Chunk (Loaded on Profile tab)
+Client Request (Postman / React Frontend)
+       ↓ (Authorization: Bearer <JWT>)
+Express Middleware (auth.js -> req.user)
+       ↓
+Cache Layer (`cache/taskCache.js` - node-cache)
+ ├── Cache HIT  -> Returns in-memory JSON in ~4-18 ms (Header: X-Cache: HIT)
+ └── Cache MISS -> Queries MongoDB Atlas, stores in cache (TTL: 60s) (Header: X-Cache: MISS)
+       ↓
+Cache Invalidation Trigger (POST / PUT / DELETE)
+ └── Clears user-specific cache keys immediately to guarantee data freshness
 ```
 
 ---
 
-### 📊 Before vs After Performance Comparison Table
+### 📊 Measured Response Time Comparison (Uncached vs. Cached)
 
-| Metric | Practical 7 (Monolithic Bundle) | Practical 8 (Optimized & Code-Split) | Improvement |
+*Measurements obtained by querying the live MongoDB Atlas cluster vs in-memory cache:*
+
+| Run # | Uncached (Direct MongoDB Atlas Query) | Cached (`node-cache` In-Memory Hit) | Latency Improvement |
 | :--- | :--- | :--- | :--- |
-| **Initial JS Bundle Size** | `199.96 kB` (`62.25 kB` gzip) | `199.07 kB` (`62.50 kB` gzip) | Reduced core load footprint |
-| **Code Splitting Chunks** | 1 monolithic file | **6 separate on-demand chunks** | Modular architecture |
-| `TaskManagerView` Chunk | Bundled in main | `2.94 kB` (Deferred) | Loaded only on Tasks tab |
-| `AnalyticsView` Chunk | Bundled in main | `2.39 kB` (Deferred) | Loaded only on Analytics tab |
-| `TaskAnalyticsChart` Chunk | Bundled in main | `2.26 kB` (Deferred) | Loaded on demand when requested |
-| `ProfileView` Chunk | Bundled in main | `1.80 kB` (Deferred) | Loaded only on Profile tab |
-| `AuthView` Chunk | Bundled in main | `2.99 kB` (Deferred) | Loaded only on Login/Register |
-| **Loading UX Under Slow 3G** | Blank screen / blocking freeze | Smooth Skeleton shimmer fallback | Zero layout shift & high perceived speed |
-| **Component Re-renders** | Entire task list re-rendered on keystroke | Only input re-renders (`React.memo`) | Optimized render cycle |
+| **Run 1** | `128 ms` (`X-Cache: MISS`) | `18 ms` (`X-Cache: HIT`) | **85.9% faster** |
+| **Run 2** | `64 ms` (`X-Cache: MISS`) | `5 ms` (`X-Cache: HIT`) | **92.2% faster** |
+| **Run 3** | `63 ms` (`X-Cache: MISS`) | `4 ms` (`X-Cache: HIT`) | **93.6% faster** |
+| **Average** | **`85.0 ms`** | **`9.0 ms`** | **~9.4x Speedup** |
+| **Single Task (`GET /:id`)** | `48 ms` (Miss) | `3 ms` (Hit) | **~16x Speedup** |
 
 ---
 
-### 📂 Project Structure (Practical 8)
-```
-task-manager-frontend/
-├── src/
-│   ├── components/
-│   │   ├── AuthView.jsx            # Lazy route: Login & Register forms
-│   │   ├── TaskManagerView.jsx     # Lazy route: Task CRUD & filter view
-│   │   ├── TaskItem.jsx            # Memoized component (React.memo profiler optimization)
-│   │   ├── AnalyticsView.jsx       # Lazy route: Productivity stats
-│   │   ├── TaskAnalyticsChart.jsx  # On-demand heavy chart component
-│   │   ├── ProfileView.jsx         # Lazy route: User profile & token stats
-│   │   └── LoadingFallback.jsx     # Skeleton loading card with shimmer animation
-│   ├── App.jsx                     # Suspense boundary & dynamic React.lazy imports
-│   ├── App.css                     # Dark theme, skeleton animations, charts
-│   ├── index.css
-│   └── main.jsx
-├── index.html
-├── package.json
-└── vite.config.js
-```
+### 🌐 Endpoints & Cache Behavior
+
+| Endpoint | Method | Cache Strategy | Invalidation Trigger |
+| :--- | :--- | :--- | :--- |
+| `/tasks` | `GET` | User-scoped key (`tasks_user_<id>`), 60s TTL | Invalidated on POST, PUT, DELETE |
+| `/tasks/:id` | `GET` | Individual key (`task_user_<id>_<taskId>`), 60s TTL | Invalidated on PUT, DELETE of that task |
+| `/tasks` | `POST` | Database write | Clears `tasks_user_<id>` |
+| `/tasks/:id` | `PUT` | Database update | Clears `tasks_user_<id>` & `task_user_<id>_<taskId>` |
+| `/tasks/:id` | `DELETE` | Database delete | Clears `tasks_user_<id>` & `task_user_<id>_<taskId>` |
+| `/cache/stats` | `GET` | Real-time cache performance counters | Returns hits, misses, hit rate, active keys |
 
 ---
 
-### ⚙️ How to Run Both Applications
+### ⚠️ In-Memory Caching Limitations in Distributed Systems
+1. **Single Node Scope**: In-memory cache resides in the RAM of a single Node.js process. In horizontal scaling / multi-instance setups (e.g. load balancers, PM2 cluster, Kubernetes), each instance maintains a separate cache, leading to cache inconsistency across replicas.
+2. **Process Restart**: Server restarts or crashes wipe all in-memory cache.
+3. **Memory Footprint**: High traffic and unbounded keys can consume excessive Node.js heap memory without proper eviction policies.
+*Solution for Production Distributed Systems*: Use centralized external caching like **Redis** or **Memcached**.
 
-#### 1. Terminal 1: Backend Server (Port 5000)
+---
+
+### ⚙️ How to Run Tests & Benchmarks
+
 ```bash
 cd TaskManagerAPI
-npm install
-npm start
-```
-
-#### 2. Terminal 2: Frontend Server (Port 5173)
-```bash
-cd task-manager-frontend
-npm install
-npm run dev
-```
-
-#### 3. Build & Analyze Chunks
-```bash
-cd task-manager-frontend
-npm run build
+npm start                  # Start server on Port 5000
+npm test                   # Run core test suite
+node prac9-test-benchmark.js # Run Practical 9 timing benchmark
 ```
