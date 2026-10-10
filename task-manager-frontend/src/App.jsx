@@ -1,11 +1,21 @@
-import { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, Suspense, lazy } from "react";
+import LoadingFallback from "./components/LoadingFallback";
 import "./App.css";
+
+// Practical 8: Lazy loaded views with React.lazy and Suspense for Code Splitting
+const AuthView = lazy(() => import("./components/AuthView"));
+const TaskManagerView = lazy(() => import("./components/TaskManagerView"));
+const AnalyticsView = lazy(() => import("./components/AnalyticsView"));
+const ProfileView = lazy(() => import("./components/ProfileView"));
 
 const API_BASE = "http://localhost:5000";
 const TASKS_API = `${API_BASE}/tasks`;
 const AUTH_API = `${API_BASE}/auth`;
 
 function App() {
+  // Navigation active tab: "tasks" | "analytics" | "profile"
+  const [activeTab, setActiveTab] = useState("tasks");
+
   // Auth state
   const [token, setToken] = useState(() => localStorage.getItem("token") || "");
   const [user, setUser] = useState(() => {
@@ -16,15 +26,9 @@ function App() {
       return null;
     }
   });
-  const [authMode, setAuthMode] = useState("login"); // "login" | "register"
-  const [authEmail, setAuthEmail] = useState("");
-  const [authPassword, setAuthPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
 
   // Task state
   const [tasks, setTasks] = useState([]);
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -36,6 +40,7 @@ function App() {
     setToken("");
     setUser(null);
     setTasks([]);
+    setActiveTab("tasks");
     if (reason) {
       setError(reason);
     } else {
@@ -97,7 +102,7 @@ function App() {
           handleLogout();
         }
       } catch {
-        // Backend might not be running yet or network error
+        // Network or server starting up
       }
     };
 
@@ -107,27 +112,9 @@ function App() {
   }, [token, fetchTasks, handleLogout]);
 
   // Handle User Registration
-  const handleRegister = async (e) => {
-    e.preventDefault();
+  const handleRegister = useCallback(async (email, password, onSuccess) => {
     setError("");
     setMessage("");
-
-    if (!authEmail.trim()) {
-      setError("Email is required");
-      return;
-    }
-    if (!authPassword) {
-      setError("Password is required");
-      return;
-    }
-    if (authPassword.length < 6) {
-      setError("Password must be at least 6 characters long");
-      return;
-    }
-    if (authPassword !== confirmPassword) {
-      setError("Passwords do not match");
-      return;
-    }
 
     try {
       setLoading(true);
@@ -136,10 +123,7 @@ function App() {
         headers: {
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({
-          email: authEmail.trim(),
-          password: authPassword
-        })
+        body: JSON.stringify({ email, password })
       });
 
       const data = await response.json();
@@ -149,26 +133,18 @@ function App() {
       }
 
       setMessage("Registration successful! Please log in.");
-      setAuthMode("login");
-      setAuthPassword("");
-      setConfirmPassword("");
+      if (onSuccess) onSuccess();
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   // Handle User Login
-  const handleLogin = async (e) => {
-    e.preventDefault();
+  const handleLogin = useCallback(async (email, password) => {
     setError("");
     setMessage("");
-
-    if (!authEmail.trim() || !authPassword) {
-      setError("Email and password are required");
-      return;
-    }
 
     try {
       setLoading(true);
@@ -177,10 +153,7 @@ function App() {
         headers: {
           "Content-Type": "application/json"
         },
-        body: JSON.stringify({
-          email: authEmail.trim(),
-          password: authPassword
-        })
+        body: JSON.stringify({ email, password })
       });
 
       const data = await response.json();
@@ -194,17 +167,15 @@ function App() {
       localStorage.setItem("token", data.token);
       localStorage.setItem("user", JSON.stringify(data.user));
       setMessage("Login successful!");
-      setAuthPassword("");
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   // Add new task
-  const addTask = async (e) => {
-    e.preventDefault();
+  const handleAddTask = useCallback(async (title, description) => {
     setError("");
     setMessage("");
     if (!title.trim()) {
@@ -238,18 +209,16 @@ function App() {
       }
 
       setTasks((prevTasks) => [data.task, ...prevTasks]);
-      setTitle("");
-      setDescription("");
       setMessage("Task created successfully");
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  };
+  }, [token, handleLogout]);
 
   // Toggle task completion
-  const toggleComplete = async (task) => {
+  const handleToggleComplete = useCallback(async (task) => {
     setError("");
     setMessage("");
     try {
@@ -285,10 +254,10 @@ function App() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [token, handleLogout]);
 
   // Update existing task
-  const updateTask = async (task) => {
+  const handleUpdateTask = useCallback(async (task) => {
     setError("");
     setMessage("");
     const newTitle = window.prompt("Enter new task title:", task.title);
@@ -338,18 +307,17 @@ function App() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [token, handleLogout]);
 
   // Delete task with confirmation
-  const deleteTask = async (id) => {
+  const handleDeleteTask = useCallback(async (id) => {
     setError("");
     setMessage("");
     const confirmed = window.confirm(
       "Are you sure you want to delete this task?"
     );
-    if (!confirmed) {
-      return;
-    }
+    if (!confirmed) return;
+
     try {
       setLoading(true);
       const response = await fetch(`${TASKS_API}/${id}`, {
@@ -377,16 +345,16 @@ function App() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [token, handleLogout]);
 
   return (
     <div className="app-wrapper">
       <div className="container">
-        {/* App Header */}
+        {/* Header */}
         <header className="header">
           <div className="header-title">
             <h1>Task Manager</h1>
-            <span className="badge-pill">Practical 7</span>
+            <span className="badge-pill">Practical 8: Lazy Loading</span>
           </div>
 
           {token && user && (
@@ -402,188 +370,66 @@ function App() {
           )}
         </header>
 
+        {/* Navigation Tabs (Only when authenticated) */}
+        {token && user && (
+          <nav className="main-nav">
+            <button
+              className={`nav-btn ${activeTab === "tasks" ? "active" : ""}`}
+              onClick={() => setActiveTab("tasks")}
+            >
+              📋 Tasks
+            </button>
+            <button
+              className={`nav-btn ${activeTab === "analytics" ? "active" : ""}`}
+              onClick={() => setActiveTab("analytics")}
+            >
+              📈 Analytics (Lazy Route)
+            </button>
+            <button
+              className={`nav-btn ${activeTab === "profile" ? "active" : ""}`}
+              onClick={() => setActiveTab("profile")}
+            >
+              👤 Profile (Lazy Route)
+            </button>
+          </nav>
+        )}
+
         {/* Global Notifications */}
         {error && <div className="alert alert-error">{error}</div>}
         {message && <div className="alert alert-success">{message}</div>}
-        {loading && <div className="loading-bar">Processing...</div>}
+        {loading && <div className="loading-bar">Processing request...</div>}
 
-        {/* Auth Section: When user is not logged in */}
-        {!token ? (
-          <div className="auth-card">
-            <div className="auth-tabs">
-              <button
-                className={`auth-tab ${authMode === "login" ? "active" : ""}`}
-                onClick={() => {
-                  setAuthMode("login");
-                  setError("");
-                  setMessage("");
-                }}
-              >
-                Login
-              </button>
-              <button
-                className={`auth-tab ${authMode === "register" ? "active" : ""}`}
-                onClick={() => {
-                  setAuthMode("register");
-                  setError("");
-                  setMessage("");
-                }}
-              >
-                Register
-              </button>
-            </div>
+        {/* Lazy Loaded Routes wrapped with Suspense */}
+        <Suspense fallback={<LoadingFallback message={`Loading ${activeTab} module...`} />}>
+          {!token ? (
+            <AuthView
+              loading={loading}
+              onLogin={handleLogin}
+              onRegister={handleRegister}
+            />
+          ) : (
+            <>
+              {activeTab === "tasks" && (
+                <TaskManagerView
+                  tasks={tasks}
+                  loading={loading}
+                  onAddTask={handleAddTask}
+                  onToggleComplete={handleToggleComplete}
+                  onUpdateTask={handleUpdateTask}
+                  onDeleteTask={handleDeleteTask}
+                />
+              )}
 
-            {authMode === "login" ? (
-              <form className="auth-form" onSubmit={handleLogin}>
-                <h2>Welcome Back</h2>
-                <p className="auth-subtitle">Log in to manage your private tasks</p>
-                <div className="input-group">
-                  <label htmlFor="login-email">Email Address</label>
-                  <input
-                    id="login-email"
-                    type="email"
-                    placeholder="name@example.com"
-                    value={authEmail}
-                    onChange={(e) => setAuthEmail(e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="input-group">
-                  <label htmlFor="login-password">Password</label>
-                  <input
-                    id="login-password"
-                    type="password"
-                    placeholder="Enter your password"
-                    value={authPassword}
-                    onChange={(e) => setAuthPassword(e.target.value)}
-                    required
-                  />
-                </div>
-                <button type="submit" className="btn-primary" disabled={loading}>
-                  {loading ? "Authenticating..." : "Login"}
-                </button>
-              </form>
-            ) : (
-              <form className="auth-form" onSubmit={handleRegister}>
-                <h2>Create an Account</h2>
-                <p className="auth-subtitle">Register to start organizing your tasks</p>
-                <div className="input-group">
-                  <label htmlFor="reg-email">Email Address</label>
-                  <input
-                    id="reg-email"
-                    type="email"
-                    placeholder="name@example.com"
-                    value={authEmail}
-                    onChange={(e) => setAuthEmail(e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="input-group">
-                  <label htmlFor="reg-password">Password</label>
-                  <input
-                    id="reg-password"
-                    type="password"
-                    placeholder="At least 6 characters"
-                    value={authPassword}
-                    onChange={(e) => setAuthPassword(e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="input-group">
-                  <label htmlFor="reg-confirm">Confirm Password</label>
-                  <input
-                    id="reg-confirm"
-                    type="password"
-                    placeholder="Repeat password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    required
-                  />
-                </div>
-                <button type="submit" className="btn-primary" disabled={loading}>
-                  {loading ? "Creating Account..." : "Register"}
-                </button>
-              </form>
-            )}
-          </div>
-        ) : (
-          /* Tasks Management View: When user is authenticated */
-          <div className="tasks-dashboard">
-            {/* Create Task Form */}
-            <div className="card form-card">
-              <h2>Add New Task</h2>
-              <form onSubmit={addTask} className="task-form">
-                <div className="input-group">
-                  <input
-                    type="text"
-                    placeholder="Task title (required)"
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                  />
-                </div>
-                <div className="input-group">
-                  <input
-                    type="text"
-                    placeholder="Task description (optional)"
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                  />
-                </div>
-                <button type="submit" className="btn-primary" disabled={loading}>
-                  Add Task
-                </button>
-              </form>
-            </div>
+              {activeTab === "analytics" && (
+                <AnalyticsView tasks={tasks} />
+              )}
 
-            {/* Task List Header */}
-            <div className="tasks-header">
-              <h2>Your Tasks</h2>
-              <span className="task-count">{tasks.length} task{tasks.length !== 1 ? "s" : ""}</span>
-            </div>
-
-            {/* Task List */}
-            {tasks.length === 0 && !loading ? (
-              <div className="empty-state">
-                <p>No tasks yet. Create your first task above!</p>
-              </div>
-            ) : (
-              <div className="tasks-grid">
-                {tasks.map((task) => (
-                  <div className={`task-card ${task.completed ? "task-done" : ""}`} key={task._id}>
-                    <div className="task-card-header">
-                      <div className="task-title-wrap">
-                        <input
-                          type="checkbox"
-                          className="task-checkbox"
-                          checked={Boolean(task.completed)}
-                          onChange={() => toggleComplete(task)}
-                          title="Toggle Completion"
-                        />
-                        <h3 className={task.completed ? "strike" : ""}>{task.title}</h3>
-                      </div>
-                      <span className={`status-badge ${task.completed ? "completed" : "pending"}`}>
-                        {task.completed ? "Completed" : "Pending"}
-                      </span>
-                    </div>
-
-                    {task.description && (
-                      <p className="task-desc">{task.description}</p>
-                    )}
-
-                    <div className="task-actions">
-                      <button className="btn-secondary" onClick={() => updateTask(task)}>
-                        Edit
-                      </button>
-                      <button className="btn-danger" onClick={() => deleteTask(task._id)}>
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+              {activeTab === "profile" && (
+                <ProfileView user={user} token={token} />
+              )}
+            </>
+          )}
+        </Suspense>
       </div>
     </div>
   );
