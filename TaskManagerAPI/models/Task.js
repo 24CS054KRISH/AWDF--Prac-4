@@ -3,14 +3,22 @@ const mongoose = require("mongoose");
 const taskSchema = new mongoose.Schema({
     title: {
         type: String,
-        required: true
+        required: [true, "Task title is required"],
+        trim: true
     },
     description: {
-        type: String
+        type: String,
+        trim: true,
+        default: ""
     },
     completed: {
         type: Boolean,
         default: false
+    },
+    user: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        required: [true, "User reference is required"]
     },
     createdAt: {
         type: Date,
@@ -21,3 +29,4 @@ const taskSchema = new mongoose.Schema({
 const Task = mongoose.model("Task", taskSchema);
 
 module.exports = Task;
+
